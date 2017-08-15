@@ -17,6 +17,7 @@ import logging
 
 # TODO Сделать однократную печать шапки (имя проекта, название объекта и пр.) в начале объединенного документа
 # TODO Поправить документацию функций
+# TODO удалять директорию
 
 ## Константы
 LOG_FILE_NAME = 'log/html_merger.log'    # Путь к файлу для печати логов
@@ -25,7 +26,7 @@ BREAKING_LINE = '='*50                   # Строка-разделитель �
 DEFAULT_DEBUG_MODE = True                # Режим дебага по умолчанию (для вывода исключений, возникших при парсинге аргументов)
 
 # Глобальные параметры
-global logger           # Объект-логгер
+log = None           # Объект-логгер
 
 def read_styles(file_name, input_dir):
     """
@@ -41,7 +42,7 @@ def read_styles(file_name, input_dir):
                 properties_text: свойства стиля
     """
     
-    logger.info('чтение стилей из файла \'%s\'' % (file_name))
+    log.info('чтение стилей из файла \'%s\'' % (file_name))
     file = open(input_dir + '/' + file_name, 'r', encoding="utf8")
     # Объединение всех строк, считанных из файла
     content = '\n'.join([line.strip() for line in file.readlines()])   
@@ -62,7 +63,7 @@ def read_styles(file_name, input_dir):
         css_styles.append((class_label, properties_text))        
         
     file.close()
-    logger.info('файл \'%s\' обработан' % (file_name))
+    log.info('файл \'%s\' обработан' % (file_name))
     return css_styles 
 
 def parse_file(file_name, input_dir, css_styles, class_num_start, document_num=1):
@@ -82,7 +83,7 @@ def parse_file(file_name, input_dir, css_styles, class_num_start, document_num=1
         tables_count: количество таблиц в данном документе
     """
     
-    logger.info('Начало обработки файла \'%s\'' % (file_name))
+    log.info('Начало обработки файла \'%s\'' % (file_name))
     file = open(input_dir + '/' + file_name, 'r', encoding="utf8")
     # Объединение всех строк, считанных из файла
     content = '\n'.join([line.strip() for line in file.readlines()])
@@ -129,7 +130,7 @@ def parse_file(file_name, input_dir, css_styles, class_num_start, document_num=1
     tables_count = table_num  # Количество таблиц
     
     file.close()
-    logger.info('Завершение обработки файла \'%s\'. Стилей: %d, таблиц: %d' % (file_name, len(class_labels), tables_count))
+    log.info('Завершение обработки файла \'%s\'. Стилей: %d, таблиц: %d' % (file_name, len(class_labels), tables_count))
     
     return {'styles_content' : styles_content, 'tables_content': tables_content, 'tables_count': tables_count}    
     
@@ -154,8 +155,8 @@ def compose_astra_html_tables(input_dir, target_path, files_list=[], multithread
         files_list += fnmatch.filter(os.listdir(input_dir), "*.txt")
         # Убираем вложенные директории из списка
         files_list = [file for file in files_list if os.path.isfile(input_dir + '/' + file)]
-        # Сортируем по именам (предполагается, что названия файлов: 1.html, 2.html, 3.html, ...)
-        # TODO
+        # Сортируем по номерам (предполагается, что названия файлов: 1.html, 2.html, 3.html, ...)
+        files_list = sorted(files_list, key = lambda s : int(s[:s.find('.')]))
         
     files_count = len(files_list)    # Количество файлов
     
@@ -164,18 +165,18 @@ def compose_astra_html_tables(input_dir, target_path, files_list=[], multithread
         cores_used = multiprocessing.cpu_count()           
     
     start_time = time.time()
-    logger.info('++++++++++++++++++Объединение HTML-таблиц в один документ+++++++++++++++++++++++')
-    logger.info('Рабочая директория:')
-    logger.info(input_dir)    
-    logger.info('Список файлов для обработки (количество: %d):' % (files_count))
-    logger.info(files_list)
-    logger.info('Путь к выходному (объединенному) файлу:')
-    logger.info(target_path)
+    log.info('++++++++++++++++++Объединение HTML-таблиц в один документ+++++++++++++++++++++++')
+    log.info('Рабочая директория:')
+    log.info(input_dir)    
+    log.info('Список файлов для обработки (количество: %d):' % (files_count))
+    log.info(files_list)
+    log.info('Путь к выходному (объединенному) файлу:')
+    log.info(target_path)
     
-    logger.info('%s обработка. Доступно ядер: %d. Используется: %d ' % ('Многопоточная' if multithread else 'Однопоточная', multiprocessing.cpu_count(), cores_used))
+    log.info('%s обработка. Доступно ядер: %d. Используется: %d ' % ('Многопоточная' if multithread else 'Однопоточная', multiprocessing.cpu_count(), cores_used))
     
     # Определение количества классов css-стилей в каждом из документов, сохранения названий классов в список
-    logger.info('-------Подсчет числа классов во всех документах-------')
+    log.info('-------Подсчет числа классов во всех документах-------')
     css_styles = [[]]*files_count   # Стили
     
     with confu.ThreadPoolExecutor(max_workers = cores_used) as executor:
@@ -186,14 +187,14 @@ def compose_astra_html_tables(input_dir, target_path, files_list=[], multithread
             css_styles[idx] = future.result()
         except Exception as exc:
             raise TablesComposerException(exc)
-    logger.info(BREAKING_LINE)
+    log.info(BREAKING_LINE)
 #    class_labels = [[lab for lab,_ in entry] for entry in css_styles]    
     
     all_styles_content = [[]]*files_count    # Список строк с описанием стилей для всех документов
     all_tables_content = [[]]*files_count     # Список строк с HTML-кодом таблиц по всем документам
 #    max_class_num_prev = 0   # Максимальный номер класса в предыдущем обработанном файле
 #    tables_count = 0    
-    logger.info('-------Начало обработки файлов-------')
+    log.info('-------Начало обработки файлов-------')
     with confu.ThreadPoolExecutor(max_workers = cores_used) as executor:
         class_num_start = 1
         futures_to_idx = {}
@@ -213,11 +214,11 @@ def compose_astra_html_tables(input_dir, target_path, files_list=[], multithread
         except Exception as exc:
             raise TablesComposerException(exc)
         
-    logger.info('Завершение обработки всех файлов')
-    logger.info('Обработано: документов %d, таблиц %d' % (len(files_list), tables_count))
-    logger.info(BREAKING_LINE)
+    log.info('Завершение обработки всех файлов')
+    log.info('Обработано: документов %d, таблиц %d' % (len(files_list), tables_count))
+    log.info(BREAKING_LINE)
     
-    logger.info('Генерация выходного файла')
+    log.info('Генерация выходного файла')
     output_lines = []
     output_lines.append('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">\n')
     output_lines.append('<html>\n')
@@ -242,9 +243,9 @@ def compose_astra_html_tables(input_dir, target_path, files_list=[], multithread
     out_file = open(target_path, 'w', encoding="utf8")
     out_file.writelines(output_lines)
     out_file.close()        
-    logger.info('Выходной файл создан')
+    log.info('Выходной файл создан')
     finish_time = time.time()
-    logger.info('Затраченное время: %5.2f сек' % (finish_time - start_time))
+    log.info('Затраченное время: %5.2f сек' % (finish_time - start_time))
     return
 
 def parse_args():
@@ -272,7 +273,7 @@ def parse_args():
         parser.add_mutually_exclusive_group(required=False)
         parser.add_argument('--mthread', dest='mthread', action='store_true', help='использовать многопоточность')
         parser.add_argument('--no-mthread', dest='mthread', action='store_false', help='однопоточный режим')
-        parser.set_defaults(mthread=True)
+#        parser.set_defaults(mthread=True)
         parser.add_argument('--debug', dest='debug', action='store_true', required=False, help='режим отладки')
         parser.set_defaults(debug=False)
         
@@ -308,8 +309,9 @@ def parse_args():
         # Режим вывода ошибок
         args['debug'] = args_parser_result.debug
 
-    except Exception:
-          raise ArgsParserException(e)  
+    except Exception as e:
+        print(e)
+        raise ArgsParserException(e)  
         
     return args
     
@@ -352,35 +354,38 @@ def run_from_command_line():
     """
     Запуск из командной строки        
     """
-    global logger
+    global log
     try:
 #        sys.stdout = open(LOG_FILE_NAME, "w")
         args = parse_args()
-        logger = configure_logging(args['debug'])
+        log = configure_logging(args['debug'])
         compose_astra_html_tables(args['dir'], args['output'], args['files'], args['multithread'])
     except ArgsParserException as e:
         print('[ОШИБКА] Ошибка при парсинге аргументов командной строки')
         if DEFAULT_DEBUG_MODE:
             print(e)
+            logging.exception(e)
     except LoggerException as e:
         print('[ОШИБКА] Ошибка при настройке логирования')
         if args['debug']:
-            print(e)
+            logging.exception(e)
     except TablesComposerException as e:
-        logger.error('[ОШИБКА] Ошибка при обработке таблиц')
-        logger.debug(e)
+        log.error('[ОШИБКА] Ошибка при обработке таблиц')
+        log.debug(e)
     
     except Exception as e:
-        logger.error('[ОШИБКА] Ошибка обшего содержания')
-        logger.debug(e)
+        log.error('[ОШИБКА] Ошибка обшего содержания')
+        log.debug(e)
     finally:
-        handlers = logger.handlers[:]
-        for handler in handlers:
-            handler.close()
-            logger.removeHandler(handler)
+        # Очистка обработчиков у логгера
+        if log != None:
+            handlers = log.handlers[:]
+            for handler in handlers:
+                handler.close()
+                log.removeHandler(handler)
 #        sys.stdout = sys.__stdout__
         
-    
+# Исключения    
 class TablesComposerException(Exception):
     pass
 class ArgsParserException(Exception):
